@@ -1,0 +1,145 @@
+version: '3'
+services:
+
+  cardano_postgres_master:
+    image: postgres:13
+    container_name: ${PREFIX}cardano_postgres_master
+    hostname: cardano.postgres.master
+    restart: always
+    volumes:
+      - cardano_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_MASTER_EXTERNAL_PORT:-5432}:5432"
+    environment:
+      - 'POSTGRES_PASSWORD=${POSTGRES_MASTER_PASSWORD:-str0ng_passw0rd}'
+      - 'POSTGRES_DB=${POSTGRES_MASTER_DB:-explorer}'
+      - 'POSTGRES_USER=${POSTGRES_MASTER_USER:-cardano-master}'
+
+    networks:
+      - cardano-infrastructure-net
+
+  cardano_redis_master:
+    image: redis:7.0.5
+    container_name: ${PREFIX}cardano_redis_master
+    hostname: cardano.redis.master
+    environment:
+      - REDIS_REPLICATION_MODE=master
+      - REDIS_PASSWORD=${REDIS_MASTER_PASSWORD:-str0ng_passw0rd}
+    restart: always
+    networks:
+      - cardano-infrastructure-net
+    ports:
+      - ${EXTERNAL_REDIS_MASTER_PORT:-6379}:6379
+    command: redis-server
+
+  cardano_redis_slave:
+    image: redis:7.0.5
+    container_name: ${PREFIX}cardano_redis_slave
+    hostname: cardano.redis.slave
+    environment:
+      - REDIS_REPLICATION_MODE=slave
+      - REDIS_MASTER_HOST=cardano.redis.master
+      - REDIS_MASTER_PASSWORD=${REDIS_MASTER_PASSWORD:-str0ng_passw0rd}
+      - REDIS_PASSWORD=${REDIS_SLAVE_PASSWORD:-str0ng_passw0rd}
+    restart: always
+    ports:
+      - ${EXTERNAL_REDIS_SLAVE_PORT:-6380}:6379
+    depends_on:
+      - cardano_redis_master
+    networks:
+      - cardano-infrastructure-net
+
+    command: redis-server --slaveof cardano_redis_master 6379
+
+  cardano_redis_sentinel:
+    image: 'bitnami/redis-sentinel:latest'
+    container_name: ${PREFIX}cardano_redis_sentinel
+    hostname: cardano.redis.sentinel
+    environment:
+      - REDIS_MASTER_PASSWORD=${REDIS_MASTER_PASSWORD:-str0ng_passw0rd}
+      - REDIS_MASTER_SET=${REDIS_MASTER_SET:-mymaster}
+      - REDIS_SENTINEL_DOWN_AFTER_MILLISECONDS=5000
+      - REDIS_SENTINEL_FAILOVER_TIMEOUT=500
+      - REDIS_SENTINEL_QUORUM=2
+      - REDIS_SENTINEL_PASSWORD=${REDIS_SENTINEL_PASSWORD:-str0ng_passw0rd}
+      - REDIS_MASTER_HOST=${EXTERNAL_REDIS_MASTER_HOST:-cardano.redis.master}
+      - REDIS_MASTER_PORT_NUMBER=${EXTERNAL_REDIS_MASTER_PORT:-6379}
+    restart: always
+    depends_on:
+      - cardano_redis_master
+      - cardano_redis_slave
+    ports:
+      - ${EXTERNAL_REDIS_SENTINEL_PORT}:26379
+    networks:
+      - cardano-infrastructure-net
+
+  cardano_zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.2
+    container_name: ${PREFIX}cardano_zookeeper
+    hostname: cardano.zookeeper
+    restart: always
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - cardano_zookeeper_data:/var/lib/zookeeper/data
+      - cardano_zookeeper_log:/var/lib/zookeeper/log
+    networks:
+      - cardano-infrastructure-net
+
+  cardano_kafka:
+    image: confluentinc/cp-kafka:7.3.2
+    container_name: ${PREFIX}cardano_kafka
+    hostname: cardano.kafka
+    restart: always
+    ports:
+      # To learn about configuring Kafka for access across networks see
+      # https://www.confluent.io/blog/kafka-client-cannot-connect-to-broker-on-aws-on-docker-etc/
+      - "${KAFKA_EXTERNAL_PORT}:${KAFKA_EXTERNAL_PORT}"
+    depends_on:
+      - cardano_zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'cardano_zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: LISTENER_INTERNAL:PLAINTEXT,LISTENER_EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: LISTENER_EXTERNAL://0.0.0.0:${KAFKA_EXTERNAL_PORT},LISTENER_INTERNAL://cardano_kafka:29092
+      KAFKA_ADVERTISED_LISTENERS: LISTENER_EXTERNAL://${KAFKA_EXTERNAL_HOST}:${KAFKA_EXTERNAL_PORT},LISTENER_INTERNAL://cardano_kafka:29092,
+      KAFKA_INTER_BROKER_LISTENER_NAME: LISTENER_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+    volumes:
+      - cardano_kafka_data:/var/lib/kafka/data
+    networks:
+      - cardano-infrastructure-net
+
+  cardano_kafka_ui:
+    container_name: ${PREFIX}cardano_kafka_ui
+    hostname: cardano.kafka.ui
+    image: provectuslabs/kafka-ui:latest
+    restart: always
+    ports:
+      - ${KAFKA_UI_PORT}:8080
+    depends_on:
+      - cardano_kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: cardano_kafka:29092
+      AUTH_TYPE: "LOGIN_FORM"
+      SPRING_SECURITY_USER_NAME: ${KAFKA_UI_USER:-admin}
+      SPRING_SECURITY_USER_PASSWORD: ${KAFKA_UI_PASSWORD:-pass}
+    networks:
+      - cardano-infrastructure-net
+
+networks:
+
+  cardano-infrastructure-net:
+    external: true
+    name: cardano-infrastructure-net
+
+volumes:
+  cardano_zookeeper_data:
+  cardano_zookeeper_log:
+  cardano_kafka_data:
+  cardano_postgres_data:
