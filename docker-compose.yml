@@ -132,6 +132,22 @@ services:
     networks:
       - cardano-infrastructure-net
 
+  cardano_prometheus:
+    image: "prom/prometheus"
+    container_name: ${PREFIX}cardano_prometheus
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "${PROMETHEUS_EXTERNAL_PORT}:9090"
+
+    restart: always
+  cardano_grafana:
+    image: "grafana/grafana"
+    container_name: ${PREFIX}cardano_grafana
+    ports:
+      - "${GRAFANA_EXTERNAL_PORT}:3000"
+    restart: always
+
 networks:
 
   cardano-infrastructure-net:

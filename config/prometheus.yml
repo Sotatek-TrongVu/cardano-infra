@@ -1,0 +1,12 @@
+scrape_configs:
+  - job_name: "crawler-metrics"
+    metrics_path: "/actuator/prometheus"
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["172.16.1.230:8766", "172.16.1.230:8765"]
+
+  - job_name: "consumer-metrics"
+    metrics_path: "/actuator/prometheus"
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["10.4.10.112:8282", "10.4.10.112:8181"]
