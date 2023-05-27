@@ -176,12 +176,13 @@ services:
     restart: always
     ports:
       - ${MINIO_EXTERNAL_PORT}:9000
+      - ${MINIO_EXTERNAL_CONSOLE_PORT}:${MINIO_EXTERNAL_CONSOLE_PORT}
     environment:
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-minio_access_key}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-minio_secret_key}
     volumes:
       - ./volumes/minio_data:/data
-    command: server /data
+    command: server /data --console-address ":${MINIO_EXTERNAL_CONSOLE_PORT}"
     networks:
       - cardano-infrastructure-net
 
